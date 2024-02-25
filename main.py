@@ -14,7 +14,8 @@ target = ask_input('Enter the target username: ')
 group = ask_multiple_option(options = groups + ['both']);
 print('\nEnter your Instagram credentials')
 username = ask_input('Username: ')
-password = ask_input(is_password = True)
+#password = ask_input(is_password = True)
+password = ask_input('Password: ')
 
 def scrape(group):
     differs = False
@@ -22,6 +23,7 @@ def scrape(group):
     startTime = datetime.now()
 
     scraper.authenticate(username, password)
+    input("Press Enter to continue...")
     users = scraper.get_users(group, verbose=True)
     scraper.close()
 

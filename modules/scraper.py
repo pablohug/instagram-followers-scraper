@@ -15,7 +15,7 @@ class Scraper(object):
 
     def __init__(self, target):
         self.target = target
-        self.driver = webdriver.Chrome('drivers/chromedriver')
+        self.driver = webdriver.Chrome()
 
 
     def close(self):
@@ -30,24 +30,29 @@ class Scraper(object):
         print('\nLogging in…')
         self.driver.get('https://www.instagram.com')
 
+        """
         # Go to log in
-        login_link = WebDriverWait(self.driver, 5).until(
-            EC.presence_of_element_located((By.LINK_TEXT, 'Log in'))
+        login_link = WebDriverWait(self.driver, 100).until(EC.visibility_of_element_located((By.CSS_SELECTOR,"button[type='submit']"))
         )
-        login_link.click()
+        print(login_link)
+        input("Press Enter")
+        #login_link.click()
 
         # Authenticate
-        username_input = self.driver.find_element_by_xpath(
-            '//input[@placeholder="Username"]'
+        username_input = self.driver.find_element("xpath", 
+            '//input[@placeholder="Phone number, username, or email"]'
         )
-        password_input = self.driver.find_element_by_xpath(
+        password_input = self.driver.find_element("xpath", 
             '//input[@placeholder="Password"]'
         )
 
+        input("Press Enter")
         username_input.send_keys(username)
         password_input.send_keys(password)
         password_input.send_keys(Keys.RETURN)
         time.sleep(1)
+        input("Press Enter")
+        """
 
 
     def get_users(self, group, verbose = False):
@@ -67,7 +72,7 @@ class Scraper(object):
         retry = 2
 
         # While there are more users scroll and save the results
-        while updated_list[last_user_index] is not updated_list[-1] or retry > 0:
+        while last_user_index < len(updated_list) and updated_list[last_user_index] is not updated_list[-1] or retry > 0:
             self._scroll(self.users_list_container, initial_scrolling_speed)
 
             for index, user in enumerate(updated_list):
@@ -76,6 +81,7 @@ class Scraper(object):
 
                 try:
                     link_to_user = user.find_element(By.TAG_NAME, 'a').get_attribute('href')
+                    print('success')
                     last_user_index = index
                     if link_to_user not in links:
                         links.append(link_to_user)
@@ -92,7 +98,7 @@ class Scraper(object):
                     pass
 
             updated_list = self._get_updated_user_list()
-            if updated_list[last_user_index] is updated_list[-1]:
+            if last_user_index < len(updated_list) and updated_list[last_user_index] is updated_list[-1]:
                 retry -= 1
 
         print('100% Complete')
@@ -107,10 +113,14 @@ class Scraper(object):
         self.expected_number = int(
             re.search('(\d+)', link.text).group(1)
         )
+
+        # Wait for the dialog to be present
+        dialog_xpath = '//div[@role="dialog"]'
+        dialog_locator = (By.XPATH, dialog_xpath)
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(dialog_locator))
+        
         time.sleep(1)
-        self.users_list_container = self.driver.find_element_by_xpath(
-            '//div[@role="dialog"]//ul/parent::div'
-        )
+        self.users_list_container = self.driver.find_element(*dialog_locator)
 
 
     def _get_link(self, group):
@@ -123,13 +133,13 @@ class Scraper(object):
                 EC.presence_of_element_located((By.PARTIAL_LINK_TEXT, group))
             )
         except:
-            self._get_link(self.target, group)
+            self._get_link(group)
 
 
     def _get_updated_user_list(self):
         """Return all the list items included in the users list."""
 
-        return self.users_list_container.find_elements(By.XPATH, 'ul//li')
+        return self.users_list_container.find_elements(By.XPATH, './/a')
 
 
     def _scroll(self, element, times = 1):

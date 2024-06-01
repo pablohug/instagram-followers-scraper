@@ -2,8 +2,10 @@ import re
 import time
 
 from selenium import webdriver
+from selenium_stealth import stealth
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -12,53 +14,58 @@ class Scraper(object):
     """Able to start up a browser, to authenticate to Instagram and get
     followers and people following a specific user."""
 
-
     def __init__(self, target):
         self.target = target
-        self.driver = webdriver.Chrome()
-
+        self.driver = webdriver.Chrome("drivers/chromedriver")
+        self.actions = ActionChains(self.driver)
+        self.wait = WebDriverWait(self.driver, 5)
 
     def close(self):
         """Close the browser."""
 
         self.driver.close()
 
-
-    def authenticate(self, username, password):
+    def authenticate(self, username, password, cookies_list):
         """Log in to Instagram with the provided credentials."""
 
         print('\nLogging in…')
         self.driver.get('https://www.instagram.com')
+        print("Get instagram.com...")
+        for cookie in cookies_list:
+            self.driver.add_cookie(cookie)
+        self.driver.refresh()
+        print("Adding cookies...")
 
-        """
-        # Go to log in
-        login_link = WebDriverWait(self.driver, 100).until(EC.visibility_of_element_located((By.CSS_SELECTOR,"button[type='submit']"))
-        )
-        print(login_link)
-        input("Press Enter")
-        #login_link.click()
+        # Check if suspicious activity window is visible
+        try:
+            sus_elem = self.wait.until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "div[role='button'][aria-label='Dismiss']")))
+            sus_elem = self.driver.find_element(
+                "css selector", "div[role='button'][aria-label='Dismiss']")
+        except:
+            sus_elem = None
+            print("No Bot Warning found.")
 
-        # Authenticate
-        username_input = self.driver.find_element("xpath", 
-            '//input[@placeholder="Phone number, username, or email"]'
-        )
-        password_input = self.driver.find_element("xpath", 
-            '//input[@placeholder="Password"]'
-        )
+        if sus_elem is not None:
+            sus_elem.click()
 
-        input("Press Enter")
-        username_input.send_keys(username)
-        password_input.send_keys(password)
-        password_input.send_keys(Keys.RETURN)
-        time.sleep(1)
-        input("Press Enter")
-        """
+        try:
+            # notification_elem = self.driver.find_element("css selector", "button")
+            notification_elem = self.wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//button[text()='Not Now']")))
+            notification_elem = self.driver.find_element(
+                By.XPATH, "//button[text()='Not Now']")
+        except:
+            notification_elem = None
+            print("No Notification Popup found.")
 
+        if notification_elem is not None:
+            notification_elem.click()
 
-    def get_users(self, group, verbose = False):
+    def get_users(self, group, verbose=False):
         """Return a list of links to the users profiles found."""
 
-        self._open_dialog(self._get_link(group))
+        self._open_dialog(self._get_link(group), group)
 
         print('\nGetting {} users…{}'.format(
             self.expected_number,
@@ -66,62 +73,52 @@ class Scraper(object):
         ))
 
         links = []
-        last_user_index = 0
         updated_list = self._get_updated_user_list()
-        initial_scrolling_speed = 5
         retry = 2
+        
+        # Wait for the first user element to be present
+        self.wait.until(EC.presence_of_element_located((By.XPATH, './/a')))
 
         # While there are more users scroll and save the results
-        while last_user_index < len(updated_list) and updated_list[last_user_index] is not updated_list[-1] or retry > 0:
-            self._scroll(self.users_list_container, initial_scrolling_speed)
-
-            for index, user in enumerate(updated_list):
-                if index < last_user_index:
-                    continue
-
-                try:
-                    link_to_user = user.find_element(By.TAG_NAME, 'a').get_attribute('href')
-                    print('success')
-                    last_user_index = index
-                    if link_to_user not in links:
-                        links.append(link_to_user)
-                        if verbose:
-                            print(
-                                '{0:.2f}% {1:s}'.format(
-                                round(index / self.expected_number * 100, 2),
-                                link_to_user
-                                )
-                            )
-                except:
-                    if (initial_scrolling_speed > 1):
-                        initial_scrolling_speed -= 1
-                    pass
-
-            updated_list = self._get_updated_user_list()
-            if last_user_index < len(updated_list) and updated_list[last_user_index] is updated_list[-1]:
+        while retry > 0:
+            try:
+                # print(self.scroll_container.text)
+                self._scroll(self.scroll_container)
+                print("scrolled")
+                retry = 2
+            except Exception as e:
                 retry -= 1
+                print(f"An exception occurred: {e}")
+
+            time.sleep(2)
+            updated_list = self._get_updated_user_list()
+            print(updated_list[0].text)
 
         print('100% Complete')
         return links
 
-
-    def _open_dialog(self, link):
+    def _open_dialog(self, link, group):
         """Open a specific dialog and identify the div containing the users
         list."""
 
         link.click()
-        self.expected_number = int(
-            re.search('(\d+)', link.text).group(1)
-        )
+        a_elem = self.driver.find_element(
+            By.CSS_SELECTOR, f"a[href='/{self.target}/{group}/']")
+        number_elem = a_elem.find_element(By.CSS_SELECTOR, "span._ac2a")
+        self.expected_number = number_elem.get_attribute("title")
 
         # Wait for the dialog to be present
         dialog_xpath = '//div[@role="dialog"]'
         dialog_locator = (By.XPATH, dialog_xpath)
-        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(dialog_locator))
-        
+        self.wait.until(EC.presence_of_element_located(dialog_locator))
         time.sleep(1)
         self.users_list_container = self.driver.find_element(*dialog_locator)
-
+        self.scroll_container = self.users_list_container.find_element(
+            By.CSS_SELECTOR, "div._aano")
+        print(f"Scroll container found: {self.scroll_container.text}")
+        
+        # Wait for the first user element to be present
+        self.wait.until(EC.presence_of_element_located((By.XPATH, './/a')))
 
     def _get_link(self, group):
         """Return the element linking to the users list dialog."""
@@ -129,27 +126,20 @@ class Scraper(object):
         print('\nNavigating to %s profile…' % self.target)
         self.driver.get('https://www.instagram.com/%s/' % self.target)
         try:
-            return WebDriverWait(self.driver, 5).until(
+            return self.wait.until(
                 EC.presence_of_element_located((By.PARTIAL_LINK_TEXT, group))
             )
-        except:
+        except Exception as e:
             self._get_link(group)
-
+            print(f"An exception occurred: {e}")
 
     def _get_updated_user_list(self):
         """Return all the list items included in the users list."""
-
+        time.sleep(3)
         return self.users_list_container.find_elements(By.XPATH, './/a')
-
-
-    def _scroll(self, element, times = 1):
-        """Scroll a specific element one or more times with small delay between
-        them."""
-
-        while times > 0:
-            self.driver.execute_script(
-                'arguments[0].scrollTop = arguments[0].scrollHeight',
-                element
-            )
-            time.sleep(.2)
-            times -= 1
+        
+    def _scroll(self, element, pixels=1000):
+        """Scroll a specific element by a certain amount of pixels."""
+    
+        self.driver.execute_script(f"arguments[0].scrollBy(0, {pixels});", element)
+        time.sleep(3)
